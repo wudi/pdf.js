@@ -18,16 +18,15 @@ import { getFontSubstitution } from "../../src/core/font_substitutions.js";
 
 describe("getFontSubstitution", function () {
   const idFactory = createIdFactory(0);
-  const localFontPath = "/tmp/";
 
   it("should substitute an unknown font", () => {
     const fontName = "Foo";
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -40,7 +39,30 @@ describe("getFontSubstitution", function () {
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+)$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+)$/);
+  });
+
+  it("should substitute an unknown font subset", () => {
+    const fontName = "ABCDEF+Foo";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      undefined,
+      "TrueType"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: true,
+        baseFontName: "Foo",
+        src: "local(Foo)",
+        style: {
+          style: "normal",
+          weight: "normal",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+)$/);
   });
 
   it("should substitute an unknown bold font", () => {
@@ -48,9 +70,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -63,7 +85,7 @@ describe("getFontSubstitution", function () {
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+)$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+)$/);
   });
 
   it("should substitute an unknown italic font", () => {
@@ -71,9 +93,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -86,7 +108,7 @@ describe("getFontSubstitution", function () {
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+)$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+)$/);
   });
 
   it("should substitute an unknown bold italic font", () => {
@@ -94,9 +116,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -109,17 +131,17 @@ describe("getFontSubstitution", function () {
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+)$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+)$/);
   });
 
-  it("should substitute an unknown font but with a standard font", () => {
+  it("should substitute an unknown sans-serif font but with a standard font", () => {
     const fontName = "Foo";
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      "Helvetica"
+      "Helvetica",
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -132,25 +154,24 @@ describe("getFontSubstitution", function () {
           "local(A030),local(TeX Gyre Heros),local(FreeSans)," +
           "local(DejaVu Sans),local(Albany),local(Bitstream Vera Sans)," +
           "local(Arial Unicode MS),local(Microsoft Sans Serif)," +
-          "local(Apple Symbols),local(Cantarell)," +
-          "url(/tmp/LiberationSans-Regular.ttf)",
+          "local(Apple Symbols),local(Cantarell)",
         style: {
           style: "normal",
           weight: "normal",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),sans-serif$/);
   });
 
-  it("should substitute an unknown font but with a standard italic font", () => {
+  it("should substitute an unknown sans-serif font but with a standard italic font", () => {
     const fontName = "Foo-Italic";
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      "Helvetica-Oblique"
+      "Helvetica-Oblique",
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -166,24 +187,24 @@ describe("getFontSubstitution", function () {
           "local(DejaVu Sans Italic),local(Albany Italic)," +
           "local(Bitstream Vera Sans Italic),local(Arial Unicode MS Italic)," +
           "local(Microsoft Sans Serif Italic),local(Apple Symbols Italic)," +
-          "local(Cantarell Italic),url(/tmp/LiberationSans-Italic.ttf)",
+          "local(Cantarell Italic)",
         style: {
           style: "italic",
           weight: "normal",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),sans-serif$/);
   });
 
-  it("should substitute an unknown font but with a standard bold font", () => {
+  it("should substitute an unknown sans-serif font but with a standard bold font", () => {
     const fontName = "Foo-Bold";
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      "Helvetica-Bold"
+      "Helvetica-Bold",
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -198,24 +219,24 @@ describe("getFontSubstitution", function () {
           "local(DejaVu Sans Bold),local(Albany Bold)," +
           "local(Bitstream Vera Sans Bold),local(Arial Unicode MS Bold)," +
           "local(Microsoft Sans Serif Bold),local(Apple Symbols Bold)," +
-          "local(Cantarell Bold),url(/tmp/LiberationSans-Bold.ttf)",
+          "local(Cantarell Bold)",
         style: {
           style: "normal",
           weight: "bold",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),sans-serif$/);
   });
 
-  it("should substitute an unknown font but with a standard bold italic font", () => {
+  it("should substitute an unknown sans-serif font but with a standard bold italic font", () => {
     const fontName = "Foo-BoldItalic";
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      "Helvetica-BoldOblique"
+      "Helvetica-BoldOblique",
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -232,15 +253,140 @@ describe("getFontSubstitution", function () {
           "local(Bitstream Vera Sans Bold Italic)," +
           "local(Arial Unicode MS Bold Italic)," +
           "local(Microsoft Sans Serif Bold Italic)," +
-          "local(Apple Symbols Bold Italic),local(Cantarell Bold Italic)," +
-          "url(/tmp/LiberationSans-BoldItalic.ttf)",
+          "local(Apple Symbols Bold Italic),local(Cantarell Bold Italic)",
         style: {
           style: "italic",
           weight: "bold",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),sans-serif$/);
+  });
+
+  it("should substitute an unknown serif font but with a standard font", () => {
+    const fontName = "Foo";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      "Times-Roman",
+      "TrueType"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "Foo",
+        src:
+          "local(Foo),local(Times New Roman),local(Times-Roman),local(Times)," +
+          "local(Liberation Serif),local(Nimbus Roman),local(Nimbus Roman L)," +
+          "local(Tinos),local(Thorndale),local(TeX Gyre Termes)," +
+          "local(FreeSerif),local(Linux Libertine O)," +
+          "local(Libertinus Serif),local(PT Astra Serif)," +
+          "local(DejaVu Serif),local(Bitstream Vera Serif)," +
+          "local(Ubuntu)",
+        style: {
+          style: "normal",
+          weight: "normal",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),serif$/);
+  });
+
+  it("should substitute an unknown serif font but with a standard italic font", () => {
+    const fontName = "Foo-Italic";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      "Times-Italic",
+      "TrueType"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "Foo-Italic",
+        src:
+          "local(Foo-Italic),local(Times New Roman Italic)," +
+          "local(Times-Roman Italic),local(Times Italic)," +
+          "local(Liberation Serif Italic),local(Nimbus Roman Italic)," +
+          "local(Nimbus Roman L Italic)," +
+          "local(Tinos Italic),local(Thorndale Italic)," +
+          "local(TeX Gyre Termes Italic),local(FreeSerif Italic)," +
+          "local(Linux Libertine O Italic),local(Libertinus Serif Italic)," +
+          "local(PT Astra Serif Italic),local(DejaVu Serif Italic)," +
+          "local(Bitstream Vera Serif Italic),local(Ubuntu Italic)",
+        style: {
+          style: "italic",
+          weight: "normal",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),serif$/);
+  });
+
+  it("should substitute an unknown serif font but with a standard bold font", () => {
+    const fontName = "Foo-Bold";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      "Times-Bold",
+      "TrueType"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "Foo-Bold",
+        src:
+          "local(Foo-Bold),local(Times New Roman Bold),local(Times-Roman Bold)," +
+          "local(Times Bold),local(Liberation Serif Bold)," +
+          "local(Nimbus Roman Bold),local(Nimbus Roman L Bold)," +
+          "local(Tinos Bold),local(Thorndale Bold)," +
+          "local(TeX Gyre Termes Bold)," +
+          "local(FreeSerif Bold),local(Linux Libertine O Bold)," +
+          "local(Libertinus Serif Bold),local(PT Astra Serif Bold)," +
+          "local(DejaVu Serif Bold),local(Bitstream Vera Serif Bold)," +
+          "local(Ubuntu Bold)",
+        style: {
+          style: "normal",
+          weight: "bold",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),serif$/);
+  });
+
+  it("should substitute an unknown serif font but with a standard bold italic font", () => {
+    const fontName = "Foo-BoldItalic";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      "Times-BoldItalic",
+      "TrueType"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "Foo-BoldItalic",
+        src:
+          "local(Foo-BoldItalic),local(Times New Roman Bold Italic)," +
+          "local(Times-Roman Bold Italic),local(Times Bold Italic)," +
+          "local(Liberation Serif Bold Italic),local(Nimbus Roman Bold Italic)," +
+          "local(Nimbus Roman L Bold Italic),local(Tinos Bold Italic)," +
+          "local(Thorndale Bold Italic),local(TeX Gyre Termes Bold Italic)," +
+          "local(FreeSerif Bold Italic),local(Linux Libertine O Bold Italic)," +
+          "local(Libertinus Serif Bold Italic)," +
+          "local(PT Astra Serif Bold Italic),local(DejaVu Serif Bold Italic)," +
+          "local(Bitstream Vera Serif Bold Italic),local(Ubuntu Bold Italic)",
+        style: {
+          style: "italic",
+          weight: "bold",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(/^"Foo",g_d(\d+)_sf(\d+),serif$/);
   });
 
   it("should substitute Calibri", () => {
@@ -248,9 +394,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -264,14 +410,16 @@ describe("getFontSubstitution", function () {
           "local(FreeSans),local(DejaVu Sans),local(Albany)," +
           "local(Bitstream Vera Sans),local(Arial Unicode MS)," +
           "local(Microsoft Sans Serif),local(Apple Symbols)," +
-          "local(Cantarell),url(/tmp/LiberationSans-Regular.ttf)",
+          "local(Cantarell)",
         style: {
           style: "normal",
           weight: "normal",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(
+      /^"Calibri",g_d(\d+)_sf(\d+),sans-serif$/
+    );
   });
 
   it("should substitute Calibri-Bold", () => {
@@ -279,9 +427,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -297,14 +445,16 @@ describe("getFontSubstitution", function () {
           "local(DejaVu Sans Bold),local(Albany Bold)," +
           "local(Bitstream Vera Sans Bold),local(Arial Unicode MS Bold)," +
           "local(Microsoft Sans Serif Bold),local(Apple Symbols Bold)," +
-          "local(Cantarell Bold),url(/tmp/LiberationSans-Bold.ttf)",
+          "local(Cantarell Bold)",
         style: {
           style: "normal",
           weight: "bold",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(
+      /^"Calibri",g_d(\d+)_sf(\d+),sans-serif$/
+    );
   });
 
   it("should substitute Arial Black", () => {
@@ -312,9 +462,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -330,14 +480,16 @@ describe("getFontSubstitution", function () {
           "local(DejaVu Sans Bold),local(Albany Bold)," +
           "local(Bitstream Vera Sans Bold),local(Arial Unicode MS Bold)," +
           "local(Microsoft Sans Serif Bold),local(Apple Symbols Bold)," +
-          "local(Cantarell Bold),url(/tmp/LiberationSans-Bold.ttf)",
+          "local(Cantarell Bold)",
         style: {
           style: "normal",
           weight: "900",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(
+      /^"ArialBlack",g_d(\d+)_sf(\d+),sans-serif$/
+    );
   });
 
   it("should substitute Arial Black Bold", () => {
@@ -345,9 +497,9 @@ describe("getFontSubstitution", function () {
     const fontSubstitution = getFontSubstitution(
       new Map(),
       idFactory,
-      localFontPath,
       fontName,
-      undefined
+      undefined,
+      "TrueType"
     );
     expect(fontSubstitution).toEqual(
       jasmine.objectContaining({
@@ -363,13 +515,104 @@ describe("getFontSubstitution", function () {
           "local(DejaVu Sans Bold),local(Albany Bold)," +
           "local(Bitstream Vera Sans Bold),local(Arial Unicode MS Bold)," +
           "local(Microsoft Sans Serif Bold),local(Apple Symbols Bold)," +
-          "local(Cantarell Bold),url(/tmp/LiberationSans-Bold.ttf)",
+          "local(Cantarell Bold)",
         style: {
           style: "normal",
           weight: "900",
         },
       })
     );
-    expect(fontSubstitution.css).toMatch(/^g_d(\d+)_sf(\d+),sans-serif$/);
+    expect(fontSubstitution.css).toMatch(
+      /^"ArialBlack",g_d(\d+)_sf(\d+),sans-serif$/
+    );
+  });
+
+  it("should substitute HeiseiMin-W3", () => {
+    const fontName = "HeiseiMin-W3";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      undefined,
+      "CIDFontType2"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "HeiseiMin-W3",
+        src:
+          "local(Hiragino Mincho ProN),local(Hiragino Mincho Pro)," +
+          "local(Yu Mincho),local(YuMincho),local(Source Han Serif JP)," +
+          "local(Noto Serif JP),local(Noto Serif CJK JP)," +
+          "local(IPAexMincho),local(IPAMincho),local(Takao Mincho)," +
+          "local(MS Mincho),local(MS PMincho)",
+        style: {
+          style: "normal",
+          weight: "normal",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(
+      /^"HeiseiMin W3",g_d(\d+)_sf(\d+),serif$/
+    );
+  });
+
+  it("should substitute a Kozuka Mincho alias", () => {
+    const fontName = "KozMinPr6N-Regular";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      undefined,
+      "CIDFontType0"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "KozMinPr6N-Regular",
+        src:
+          "local(Hiragino Mincho ProN),local(Hiragino Mincho Pro)," +
+          "local(Yu Mincho),local(YuMincho),local(Source Han Serif JP)," +
+          "local(Noto Serif JP),local(Noto Serif CJK JP)," +
+          "local(IPAexMincho),local(IPAMincho),local(Takao Mincho)," +
+          "local(MS Mincho),local(MS PMincho)",
+        style: {
+          style: "normal",
+          weight: "normal",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(
+      /^"KozMinPr6N",g_d(\d+)_sf(\d+),serif$/
+    );
+  });
+
+  it("should substitute HYGoThic-Medium", () => {
+    const fontName = "HYGoThic-Medium";
+    const fontSubstitution = getFontSubstitution(
+      new Map(),
+      idFactory,
+      fontName,
+      undefined,
+      "CIDFontType2"
+    );
+    expect(fontSubstitution).toEqual(
+      jasmine.objectContaining({
+        guessFallback: false,
+        baseFontName: "HYGoThic-Medium",
+        src:
+          "local(Apple SD Gothic Neo),local(AppleGothic)," +
+          "local(Source Han Sans KR),local(Noto Sans KR)," +
+          "local(Noto Sans CJK KR),local(Nanum Gothic)," +
+          "local(Malgun Gothic),local(Dotum),local(Gulim)",
+        style: {
+          style: "normal",
+          weight: "500",
+        },
+      })
+    );
+    expect(fontSubstitution.css).toMatch(
+      /^"HYGoThic",g_d(\d+)_sf(\d+),sans-serif$/
+    );
   });
 });

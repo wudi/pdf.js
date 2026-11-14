@@ -26,7 +26,7 @@ describe("event_utils", function () {
       const eventBus = new EventBus();
       let count = 0;
       eventBus.on("test", function (evt) {
-        expect(evt).toEqual(undefined);
+        expect(evt).toBeUndefined();
         count++;
       });
       eventBus.dispatch("test");
@@ -143,6 +143,60 @@ describe("event_utils", function () {
       expect(onceCount).toEqual(1);
     });
 
+    it("dispatch event to handlers with/without 'signal' option, aborted *before* dispatch", function () {
+      const eventBus = new EventBus();
+      const ac = new AbortController();
+      let multipleCount = 0,
+        noneCount = 0;
+
+      eventBus.on("test", function () {
+        multipleCount++;
+      });
+      eventBus.on(
+        "test",
+        function () {
+          noneCount++;
+        },
+        { signal: ac.signal }
+      );
+
+      ac.abort();
+
+      eventBus.dispatch("test");
+      eventBus.dispatch("test");
+      eventBus.dispatch("test");
+
+      expect(multipleCount).toEqual(3);
+      expect(noneCount).toEqual(0);
+    });
+
+    it("dispatch event to handlers with/without 'signal' option, aborted *after* dispatch", function () {
+      const eventBus = new EventBus();
+      const ac = new AbortController();
+      let multipleCount = 0,
+        onceCount = 0;
+
+      eventBus.on("test", function () {
+        multipleCount++;
+      });
+      eventBus.on(
+        "test",
+        function () {
+          onceCount++;
+        },
+        { signal: ac.signal }
+      );
+
+      eventBus.dispatch("test");
+      ac.abort();
+
+      eventBus.dispatch("test");
+      eventBus.dispatch("test");
+
+      expect(multipleCount).toEqual(3);
+      expect(onceCount).toEqual(1);
+    });
+
     it("should not re-dispatch to DOM", async function () {
       if (isNodeJS) {
         pending("Document is not supported in Node.js.");
@@ -150,12 +204,12 @@ describe("event_utils", function () {
       const eventBus = new EventBus();
       let count = 0;
       eventBus.on("test", function (evt) {
-        expect(evt).toEqual(undefined);
+        expect(evt).toBeUndefined();
         count++;
       });
       function domEventListener() {
         // Shouldn't get here.
-        expect(false).toEqual(true);
+        expect(false).toBeTrue();
       }
       document.addEventListener("test", domEventListener);
 
@@ -186,10 +240,10 @@ describe("event_utils", function () {
       }).then(
         function () {
           // Shouldn't get here.
-          expect(false).toEqual(true);
+          expect(false).toBeTrue();
         },
         function (reason) {
-          expect(reason instanceof Error).toEqual(true);
+          expect(reason).toBeInstanceOf(Error);
         }
       );
 
@@ -199,10 +253,10 @@ describe("event_utils", function () {
       }).then(
         function () {
           // Shouldn't get here.
-          expect(false).toEqual(true);
+          expect(false).toBeTrue();
         },
         function (reason) {
-          expect(reason instanceof Error).toEqual(true);
+          expect(reason).toBeInstanceOf(Error);
         }
       );
 
@@ -213,10 +267,10 @@ describe("event_utils", function () {
       }).then(
         function () {
           // Shouldn't get here.
-          expect(false).toEqual(true);
+          expect(false).toBeTrue();
         },
         function (reason) {
-          expect(reason instanceof Error).toEqual(true);
+          expect(reason).toBeInstanceOf(Error);
         }
       );
 

@@ -1,22 +1,17 @@
 import * as builder from "./builder.mjs";
-import { fileURLToPath } from "url";
 import fs from "fs";
 import path from "path";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = import.meta.dirname;
 
 let errors = 0;
 
 const baseDir = path.join(__dirname, "fixtures");
 const files = fs
   .readdirSync(baseDir)
-  .filter(function (name) {
-    return /-expected\./.test(name);
-  })
-  .map(function (name) {
-    return path.join(baseDir, name);
-  });
-files.forEach(function (expectationFilename) {
+  .filter(name => /-expected\./.test(name))
+  .map(name => path.join(baseDir, name));
+files.forEach(expectationFilename => {
   const inFilename = expectationFilename.replace("-expected", "");
   const expectation = fs
     .readFileSync(expectationFilename)
@@ -41,6 +36,12 @@ files.forEach(function (expectationFilename) {
   }
   if (out !== expectation) {
     errors++;
+
+    // Allow regenerating the expected output using
+    //   OVERWRITE=true node ./external/builder/test-fixtures.mjs
+    if (process.env.OVERWRITE) {
+      fs.writeFileSync(expectationFilename, out + "\n");
+    }
 
     console.log("Assertion failed for " + inFilename);
     console.log("--------------------------------------------------");

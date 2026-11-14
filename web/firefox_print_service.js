@@ -19,8 +19,11 @@ import {
   RenderingCancelledException,
   shadow,
 } from "pdfjs-lib";
-import { getXfaHtmlForPrinting } from "./print_utils.js";
-import { PDFPrintServiceFactory } from "./app.js";
+import {
+  BasePrintServiceFactory,
+  getXfaHtmlForPrinting,
+} from "./print_utils.js";
+import { AppOptions } from "./app_options.js";
 
 // Creates a placeholder with div and canvas with right size for the page.
 function composePage(
@@ -29,6 +32,7 @@ function composePage(
   size,
   printContainer,
   printResolution,
+  shouldPostMessageAfterPrintCallback,
   optionalContentConfigPromise,
   printAnnotationStoragePromise
 ) {
@@ -74,6 +78,7 @@ function composePage(
         }
         const renderContext = {
           canvasContext: ctx,
+          canvas: null,
           transform: [PRINT_UNITS, 0, 0, PRINT_UNITS, 0, 0],
           viewport: pdfPage.getViewport({ scale: 1, rotation: size.rotation }),
           intent: "print",
@@ -91,6 +96,9 @@ function composePage(
             currentRenderTask = null;
           }
           obj.done();
+          if (shouldPostMessageAfterPrintCallback) {
+            window.postMessage("ready", "*");
+          }
         },
         function (reason) {
           if (!(reason instanceof RenderingCancelledException)) {
@@ -109,26 +117,29 @@ function composePage(
           } else {
             obj.done();
           }
+          if (shouldPostMessageAfterPrintCallback) {
+            window.postMessage("error", "*");
+          }
         }
       );
   };
 }
 
 class FirefoxPrintService {
-  constructor(
+  constructor({
     pdfDocument,
     pagesOverview,
     printContainer,
     printResolution,
-    optionalContentConfigPromise = null,
-    printAnnotationStoragePromise = null
-  ) {
+    printAnnotationStoragePromise = null,
+  }) {
     this.pdfDocument = pdfDocument;
     this.pagesOverview = pagesOverview;
     this.printContainer = printContainer;
     this._printResolution = printResolution || 150;
-    this._optionalContentConfigPromise =
-      optionalContentConfigPromise || pdfDocument.getOptionalContentConfig();
+    this._optionalContentConfigPromise = pdfDocument.getOptionalContentConfig({
+      intent: "print",
+    });
     this._printAnnotationStoragePromise =
       printAnnotationStoragePromise || Promise.resolve();
   }
@@ -159,15 +170,18 @@ class FirefoxPrintService {
     // Insert a @page + size rule to make sure that the page size is correctly
     // set. Note that we assume that all pages have the same size, because
     // variable-size pages are scaled down to the initial page size in Firefox.
-    this.pageStyleSheet = document.createElement("style");
-    this.pageStyleSheet.textContent = `@page { size: ${width}pt ${height}pt;}`;
-    body.append(this.pageStyleSheet);
+    this.pageStyleSheet = new CSSStyleSheet();
+    this.pageStyleSheet.replaceSync(`@page { size: ${width}pt ${height}pt;}`);
+    document.adoptedStyleSheets.push(this.pageStyleSheet);
 
     if (pdfDocument.isPureXfa) {
       getXfaHtmlForPrinting(printContainer, pdfDocument);
       return;
     }
 
+    const shouldPostMessageAfterPrintCallback = AppOptions.get(
+      "postMessageAfterPrintCallback"
+    );
     for (let i = 0, ii = pagesOverview.length; i < ii; ++i) {
       composePage(
         pdfDocument,
@@ -175,6 +189,7 @@ class FirefoxPrintService {
         pagesOverview[i],
         printContainer,
         _printResolution,
+        shouldPostMessageAfterPrintCallback,
         _optionalContentConfigPromise,
         _printAnnotationStoragePromise
       );
@@ -188,37 +203,23 @@ class FirefoxPrintService {
     body.removeAttribute("data-pdfjsprinting");
 
     if (this.pageStyleSheet) {
-      this.pageStyleSheet.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+        styleSheet => styleSheet !== this.pageStyleSheet
+      );
       this.pageStyleSheet = null;
     }
   }
 }
 
-PDFPrintServiceFactory.instance = {
-  get supportsPrinting() {
+class PDFPrintServiceFactory extends BasePrintServiceFactory {
+  static get supportsPrinting() {
     const canvas = document.createElement("canvas");
-    const value = "mozPrintCallback" in canvas;
+    return shadow(this, "supportsPrinting", "mozPrintCallback" in canvas);
+  }
 
-    return shadow(this, "supportsPrinting", value);
-  },
+  static createPrintService(params) {
+    return new FirefoxPrintService(params);
+  }
+}
 
-  createPrintService(
-    pdfDocument,
-    pagesOverview,
-    printContainer,
-    printResolution,
-    optionalContentConfigPromise,
-    printAnnotationStoragePromise
-  ) {
-    return new FirefoxPrintService(
-      pdfDocument,
-      pagesOverview,
-      printContainer,
-      printResolution,
-      optionalContentConfigPromise,
-      printAnnotationStoragePromise
-    );
-  },
-};
-
-export { FirefoxPrintService };
+export { PDFPrintServiceFactory };

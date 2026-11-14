@@ -1,5 +1,4 @@
-/*
- * Copyright 2014 Mozilla Foundation
+/* Copyright 2014 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +15,13 @@
 
 import fs from "fs";
 import path from "path";
-import rimraf from "rimraf";
-
-const rimrafSync = rimraf.sync;
-
-function removeDirSync(dir) {
-  fs.readdirSync(dir); // Will throw if dir is not a directory
-  rimrafSync(dir, {
-    disableGlob: true,
-  });
-}
 
 function copySubtreeSync(src, dest) {
   const files = fs.readdirSync(src);
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest);
   }
-  files.forEach(function (filename) {
+  files.forEach(filename => {
     const srcFile = path.join(src, filename);
     const file = path.join(dest, filename);
     const stats = fs.statSync(srcFile);
@@ -63,4 +52,4 @@ function ensureDirSync(dir) {
   }
 }
 
-export { copySubtreeSync, ensureDirSync, removeDirSync };
+export { copySubtreeSync, ensureDirSync };

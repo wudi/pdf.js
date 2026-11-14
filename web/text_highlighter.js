@@ -13,12 +13,14 @@
  * limitations under the License.
  */
 
+import { internalOpt } from "./internal_evt.js";
+
 /** @typedef {import("./event_utils").EventBus} EventBus */
 // eslint-disable-next-line max-len
 /** @typedef {import("./pdf_find_controller").PDFFindController} PDFFindController */
 
 /**
- * @typedef {Object} TextHighlighterOptions
+ * @typedef {object} TextHighlighterOptions
  * @property {PDFFindController} findController
  * @property {EventBus} eventBus - The application event bus.
  * @property {number} pageIndex - The page index.
@@ -29,6 +31,8 @@
  * either the text layer or XFA layer depending on the type of document.
  */
 class TextHighlighter {
+  #eventAC = null;
+
   /**
    * @param {TextHighlighterOptions} options
    */
@@ -37,7 +41,6 @@ class TextHighlighter {
     this.matches = [];
     this.eventBus = eventBus;
     this.pageIdx = pageIndex;
-    this._onUpdateTextLayerMatches = null;
     this.textDivs = null;
     this.textContentItemsStr = null;
     this.enabled = false;
@@ -48,7 +51,6 @@ class TextHighlighter {
    * The arrays should be of equal length and the array element at each index
    * should correspond to the other. e.g.
    * `items[0] = "<span>Item 0</span>" and texts[0] = "Item 0";
-   *
    * @param {Array<Node>} divs
    * @param {Array<string>} texts
    */
@@ -69,15 +71,18 @@ class TextHighlighter {
       throw new Error("TextHighlighter is already enabled.");
     }
     this.enabled = true;
-    if (!this._onUpdateTextLayerMatches) {
-      this._onUpdateTextLayerMatches = evt => {
-        if (evt.pageIndex === this.pageIdx || evt.pageIndex === -1) {
-          this._updateMatches();
-        }
-      };
-      this.eventBus._on(
+
+    if (!this.#eventAC) {
+      this.#eventAC = new AbortController();
+
+      this.eventBus.on(
         "updatetextlayermatches",
-        this._onUpdateTextLayerMatches
+        evt => {
+          if (evt.pageIndex === this.pageIdx || evt.pageIndex === -1) {
+            this._updateMatches();
+          }
+        },
+        { signal: this.#eventAC.signal, ...internalOpt }
       );
     }
     this._updateMatches();
@@ -88,13 +93,10 @@ class TextHighlighter {
       return;
     }
     this.enabled = false;
-    if (this._onUpdateTextLayerMatches) {
-      this.eventBus._off(
-        "updatetextlayermatches",
-        this._onUpdateTextLayerMatches
-      );
-      this._onUpdateTextLayerMatches = null;
-    }
+
+    this.#eventAC?.abort();
+    this.#eventAC = null;
+
     this._updateMatches(/* reset = */ true);
   }
 
@@ -192,8 +194,10 @@ class TextHighlighter {
         span.className = `${className} appended`;
         span.append(node);
         div.append(span);
-        return className.includes("selected") ? span.offsetLeft : 0;
+
+        return className.includes("selected") ? span : null;
       }
+
       div.append(node);
       return 0;
     }
@@ -225,7 +229,7 @@ class TextHighlighter {
       const end = match.end;
       const isSelected = isSelectedPage && i === selectedMatchIdx;
       const highlightSuffix = isSelected ? " selected" : "";
-      let selectedLeft = 0;
+      let selectedSpan = null;
 
       // Match inside new div.
       if (!prevEnd || begin.divIdx !== prevEnd.divIdx) {
@@ -240,14 +244,14 @@ class TextHighlighter {
       }
 
       if (begin.divIdx === end.divIdx) {
-        selectedLeft = appendTextToDiv(
+        selectedSpan = appendTextToDiv(
           begin.divIdx,
           begin.offset,
           end.offset,
           "highlight" + highlightSuffix
         );
       } else {
-        selectedLeft = appendTextToDiv(
+        selectedSpan = appendTextToDiv(
           begin.divIdx,
           begin.offset,
           infinity.offset,
@@ -263,8 +267,7 @@ class TextHighlighter {
       if (isSelected) {
         // Attempt to scroll the selected match into view.
         findController.scrollMatchIntoView({
-          element: textDivs[begin.divIdx],
-          selectedLeft,
+          element: selectedSpan,
           pageIndex: pageIdx,
           matchIndex: selectedMatchIdx,
         });

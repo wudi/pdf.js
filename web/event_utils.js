@@ -13,14 +13,17 @@
  * limitations under the License.
  */
 
+import { createPromiseCapability, makeSet } from "pdfjs-lib";
+import { INTERNAL_EVT, internalOpt } from "./internal_evt.js";
+
 const WaitOnType = {
   EVENT: "event",
   TIMEOUT: "timeout",
 };
 
 /**
- * @typedef {Object} WaitOnEventOrTimeoutParameters
- * @property {Object} target - The event target, can for example be:
+ * @typedef {object} WaitOnEventOrTimeoutParameters
+ * @property {object} target - The event target, can for example be:
  *   `window`, `document`, a DOM element, or an {EventBus} instance.
  * @property {string} name - The name of the event.
  * @property {number} delay - The delay, in milliseconds, after which the
@@ -31,43 +34,37 @@ const WaitOnType = {
  * Allows waiting for an event or a timeout, whichever occurs first.
  * Can be used to ensure that an action always occurs, even when an event
  * arrives late or not at all.
- *
- * @param {WaitOnEventOrTimeoutParameters}
+ * @param {WaitOnEventOrTimeoutParameters} params
  * @returns {Promise} A promise that is resolved with a {WaitOnType} value.
  */
-function waitOnEventOrTimeout({ target, name, delay = 0 }) {
-  return new Promise(function (resolve, reject) {
-    if (
-      typeof target !== "object" ||
-      !(name && typeof name === "string") ||
-      !(Number.isInteger(delay) && delay >= 0)
-    ) {
-      throw new Error("waitOnEventOrTimeout - invalid parameters.");
-    }
+async function waitOnEventOrTimeout({ target, name, delay = 0 }) {
+  if (
+    typeof target !== "object" ||
+    !(name && typeof name === "string") ||
+    !(Number.isInteger(delay) && delay >= 0)
+  ) {
+    throw new Error("waitOnEventOrTimeout - invalid parameters.");
+  }
+  const { promise, resolve } = createPromiseCapability();
+  const ac = new AbortController();
 
-    function handler(type) {
-      if (target instanceof EventBus) {
-        target._off(name, eventHandler);
-      } else {
-        target.removeEventListener(name, eventHandler);
-      }
+  function handler(type) {
+    ac.abort(); // Remove event listener.
+    clearTimeout(timeout);
 
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-      resolve(type);
-    }
+    resolve(type);
+  }
 
-    const eventHandler = handler.bind(null, WaitOnType.EVENT);
-    if (target instanceof EventBus) {
-      target._on(name, eventHandler);
-    } else {
-      target.addEventListener(name, eventHandler);
-    }
+  const evtMethod = target instanceof EventBus ? "on" : "addEventListener";
+  const evtOpts =
+    target instanceof EventBus
+      ? { signal: ac.signal, ...internalOpt }
+      : { signal: ac.signal };
+  target[evtMethod](name, handler.bind(null, WaitOnType.EVENT), evtOpts);
 
-    const timeoutHandler = handler.bind(null, WaitOnType.TIMEOUT);
-    const timeout = setTimeout(timeoutHandler, delay);
-  });
+  const timeout = setTimeout(handler.bind(null, WaitOnType.TIMEOUT), delay);
+
+  return promise;
 }
 
 /**
@@ -75,123 +72,141 @@ function waitOnEventOrTimeout({ target, name, delay = 0 }) {
  * and `off` methods. To raise an event, the `dispatch` method shall be used.
  */
 class EventBus {
-  #listeners = Object.create(null);
+  #listeners = new Map();
+
+  constructor() {
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
+      // Prevent the class methods from being overridden by third-party users,
+      // to ensure that `INTERNAL_EVT` cannot be accessed from the outside.
+      Object.seal(this);
+    }
+  }
 
   /**
    * @param {string} eventName
-   * @param {function} listener
-   * @param {Object} [options]
+   * @param {Function} listener
+   * @param {object} [options]
    */
   on(eventName, listener, options = null) {
-    this._on(eventName, listener, {
-      external: true,
-      once: options?.once,
+    let rmAbort = null;
+    if (options?.signal instanceof AbortSignal) {
+      const { signal } = options;
+      if (signal.aborted) {
+        console.error("Cannot use an `aborted` signal.");
+        return;
+      }
+      const onAbort = () => this.off(eventName, listener);
+      rmAbort = () => signal.removeEventListener("abort", onAbort);
+
+      signal.addEventListener("abort", onAbort);
+    }
+
+    this.#listeners.getOrInsertComputed(eventName, makeSet).add({
+      listener,
+      internal: options?.internal === INTERNAL_EVT,
+      once: options?.once === true,
+      rmAbort,
     });
   }
 
   /**
    * @param {string} eventName
-   * @param {function} listener
-   * @param {Object} [options]
+   * @param {Function} listener
+   * @param {object} [options]
    */
   off(eventName, listener, options = null) {
-    this._off(eventName, listener, {
-      external: true,
-      once: options?.once,
-    });
+    const eventListeners = this.#listeners.get(eventName);
+    const evt = eventListeners?.keys().find(e => e.listener === listener);
+    if (evt) {
+      evt.rmAbort?.(); // Ensure that the `AbortSignal` listener is removed.
+      eventListeners.delete(evt);
+    }
   }
 
   /**
    * @param {string} eventName
-   * @param {Object} data
+   * @param {object} data
    */
   dispatch(eventName, data) {
-    const eventListeners = this.#listeners[eventName];
-    if (!eventListeners || eventListeners.length === 0) {
+    const eventListeners = this.#listeners.get(eventName);
+    if (!eventListeners?.size) {
       return;
     }
-    let externalListeners;
-    // Making copy of the listeners array in case if it will be modified
+    let extListeners;
+    // Always create a copy of the listeners in case they are modified
     // during dispatch.
-    for (const { listener, external, once } of eventListeners.slice(0)) {
+    for (const { listener, internal, once } of new Set(eventListeners)) {
       if (once) {
-        this._off(eventName, listener);
+        this.off(eventName, listener);
       }
-      if (external) {
-        (externalListeners ||= []).push(listener);
+      if (!internal) {
+        (extListeners ??= []).push(listener);
         continue;
       }
       listener(data);
     }
     // Dispatch any "external" listeners *after* the internal ones, to give the
     // viewer components time to handle events and update their state first.
-    if (externalListeners) {
-      for (const listener of externalListeners) {
+    if (extListeners) {
+      for (const listener of extListeners) {
         listener(data);
-      }
-      externalListeners = null;
-    }
-  }
-
-  /**
-   * @ignore
-   */
-  _on(eventName, listener, options = null) {
-    const eventListeners = (this.#listeners[eventName] ||= []);
-    eventListeners.push({
-      listener,
-      external: options?.external === true,
-      once: options?.once === true,
-    });
-  }
-
-  /**
-   * @ignore
-   */
-  _off(eventName, listener, options = null) {
-    const eventListeners = this.#listeners[eventName];
-    if (!eventListeners) {
-      return;
-    }
-    for (let i = 0, ii = eventListeners.length; i < ii; i++) {
-      if (eventListeners[i].listener === listener) {
-        eventListeners.splice(i, 1);
-        return;
       }
     }
   }
 }
 
 /**
- * NOTE: Only used to support various PDF viewer tests in `mozilla-central`.
+ * NOTE: Only used in the Firefox built-in pdf viewer.
  */
-class AutomationEventBus extends EventBus {
+class FirefoxEventBus extends EventBus {
+  #externalServices;
+
+  #globalEventNames;
+
+  #isInAutomation;
+
+  constructor(globalEventNames, externalServices, isInAutomation) {
+    super();
+    this.#globalEventNames = globalEventNames;
+    this.#externalServices = externalServices;
+    this.#isInAutomation = isInAutomation;
+  }
+
   dispatch(eventName, data) {
     if (typeof PDFJSDev !== "undefined" && !PDFJSDev.test("MOZCENTRAL")) {
-      throw new Error("Not implemented: AutomationEventBus.dispatch");
+      throw new Error("Not implemented: FirefoxEventBus.dispatch");
     }
     super.dispatch(eventName, data);
 
-    const detail = Object.create(null);
-    if (data) {
-      for (const key in data) {
-        const value = data[key];
-        if (key === "source") {
-          if (value === window || value === document) {
-            return; // No need to re-dispatch (already) global events.
+    if (this.#isInAutomation) {
+      const detail = Object.create(null);
+      if (data) {
+        for (const key in data) {
+          const value = data[key];
+          if (key === "source") {
+            if (value === window || value === document) {
+              return; // No need to re-dispatch (already) global events.
+            }
+            continue; // Ignore the `source` property.
           }
-          continue; // Ignore the `source` property.
+          detail[key] = value;
         }
-        detail[key] = value;
       }
+      const event = new CustomEvent(eventName, {
+        bubbles: true,
+        cancelable: true,
+        detail,
+      });
+      document.dispatchEvent(event);
     }
-    const event = new CustomEvent(eventName, {
-      bubbles: true,
-      cancelable: true,
-      detail,
-    });
-    document.dispatchEvent(event);
+
+    if (this.#globalEventNames?.has(eventName)) {
+      this.#externalServices.dispatchGlobalEvent({
+        eventName,
+        detail: data,
+      });
+    }
   }
 }
 
-export { AutomationEventBus, EventBus, waitOnEventOrTimeout, WaitOnType };
+export { EventBus, FirefoxEventBus, waitOnEventOrTimeout, WaitOnType };

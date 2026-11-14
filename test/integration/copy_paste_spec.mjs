@@ -15,18 +15,19 @@
 
 import {
   closePages,
-  kbCopy,
+  copy,
   kbSelectAll,
   loadAndWait,
   mockClipboard,
   waitForEvent,
-  waitForTextLayer,
 } from "./test_utils.mjs";
 
 const selectAll = async page => {
-  const promise = waitForEvent(page, "selectionchange");
-  await kbSelectAll(page);
-  await promise;
+  await waitForEvent({
+    page,
+    eventName: "selectionchange",
+    action: () => kbSelectAll(page),
+  });
 
   await page.waitForFunction(() => {
     const selection = document.getSelection();
@@ -39,34 +40,24 @@ describe("Copy and paste", () => {
   describe("all text", () => {
     let pages;
 
-    beforeAll(async () => {
-      pages = await loadAndWait(
-        "tracemonkey.pdf",
-        "#hiddenCopyElement",
-        100,
-        async page => {
-          await page.waitForFunction(
-            () => !!window.PDFViewerApplication.eventBus
-          );
-          await waitForTextLayer(page);
-        }
-      );
+    beforeEach(async () => {
+      pages = await loadAndWait("tracemonkey.pdf", "#hiddenCopyElement", 100);
       await mockClipboard(pages);
     });
 
-    afterAll(async () => {
+    afterEach(async () => {
       await closePages(pages);
     });
 
     it("must check that we've all the contents on copy/paste", async () => {
       await Promise.all(
         pages.map(async ([browserName, page]) => {
+          await page.waitForSelector(
+            ".page[data-page-number='1'] .textLayer .endOfContent"
+          );
           await selectAll(page);
 
-          const promise = waitForEvent(page, "copy");
-          await kbCopy(page);
-          await promise;
-
+          await copy(page);
           await page.waitForFunction(
             `document.querySelector('#viewerContainer').style.cursor !== "wait"`
           );
@@ -85,60 +76,60 @@ describe("Copy and paste", () => {
             text.includes("This section provides an overview of our system")
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes(
               "are represented by function calls. This makes the LIR used by"
             )
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes("When compiling loops, we consult the oracle before")
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(text.includes("Nested Trace Tree Formation"))
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes(
               "An important detail is that the call to the inner trace"
             )
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(text.includes("When trace recording is completed, nanojit"))
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes(
               "SpiderMonkey, like many VMs, needs to preempt the user program"
             )
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes(
               "Using similar computations, we find that trace recording takes"
             )
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes(
               "specialization algorithm. We also described our trace compiler"
             )
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
           expect(
             text.includes(
               "dynamic optimization system. In Proceedings of the ACM SIGPLAN"
             )
           )
             .withContext(`In ${browserName}`)
-            .toEqual(true);
+            .toBeTrue();
         })
       );
     });
@@ -146,34 +137,28 @@ describe("Copy and paste", () => {
   describe("Copy/paste and ligatures", () => {
     let pages;
 
-    beforeAll(async () => {
+    beforeEach(async () => {
       pages = await loadAndWait(
         "copy_paste_ligatures.pdf",
         "#hiddenCopyElement",
-        100,
-        async page => {
-          await page.waitForFunction(
-            () => !!window.PDFViewerApplication.eventBus
-          );
-          await waitForTextLayer(page);
-        }
+        100
       );
       await mockClipboard(pages);
     });
 
-    afterAll(async () => {
+    afterEach(async () => {
       await closePages(pages);
     });
 
     it("must check that the ligatures have been removed when the text has been copied", async () => {
       await Promise.all(
         pages.map(async ([browserName, page]) => {
+          await page.waitForSelector(
+            ".page[data-page-number='1'] .textLayer .endOfContent"
+          );
           await selectAll(page);
 
-          const promise = waitForEvent(page, "copy");
-          await kbCopy(page);
-          await promise;
-
+          await copy(page);
           await page.waitForFunction(
             `document.querySelector('#viewerContainer').style.cursor !== "wait"`
           );

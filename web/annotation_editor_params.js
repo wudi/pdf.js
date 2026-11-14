@@ -13,7 +13,28 @@
  * limitations under the License.
  */
 
-import { AnnotationEditorParamsType } from "pdfjs-lib";
+/** @typedef {import("./event_utils.js").EventBus} EventBus */
+
+import {
+  AnnotationEditorParamsType,
+  FeatureTest,
+  getRGBA,
+  Util,
+} from "pdfjs-lib";
+import { internalOpt } from "./internal_evt.js";
+
+/**
+ * @typedef {object} AnnotationEditorParamsOptions
+ * @property {HTMLInputElement} editorFreeTextFontSize
+ * @property {HTMLInputElement} editorFreeTextColor
+ * @property {HTMLInputElement} editorInkColor
+ * @property {HTMLInputElement} editorInkThickness
+ * @property {HTMLInputElement} editorInkOpacity
+ * @property {HTMLButtonElement} editorStampAddImage
+ * @property {HTMLInputElement} editorFreeHighlightThickness
+ * @property {HTMLButtonElement} editorHighlightShowAll
+ * @property {HTMLButtonElement} editorSignatureAddSignature
+ */
 
 class AnnotationEditorParams {
   /**
@@ -25,6 +46,9 @@ class AnnotationEditorParams {
     this.#bindListeners(options);
   }
 
+  /**
+   * @param {AnnotationEditorParamsOptions} options
+   */
   #bindListeners({
     editorFreeTextFontSize,
     editorFreeTextColor,
@@ -32,9 +56,14 @@ class AnnotationEditorParams {
     editorInkThickness,
     editorInkOpacity,
     editorStampAddImage,
+    editorFreeHighlightThickness,
+    editorHighlightShowAll,
+    editorSignatureAddSignature,
   }) {
+    const { eventBus } = this;
+
     const dispatchEvent = (typeStr, value) => {
-      this.eventBus.dispatch("switchannotationeditorparams", {
+      eventBus.dispatch("switchannotationeditorparams", {
         source: this,
         type: AnnotationEditorParamsType[typeStr],
         value,
@@ -46,40 +75,127 @@ class AnnotationEditorParams {
     editorFreeTextColor.addEventListener("input", function () {
       dispatchEvent("FREETEXT_COLOR", this.value);
     });
-    editorInkColor.addEventListener("input", function () {
-      dispatchEvent("INK_COLOR", this.value);
-    });
+
+    // Handlers for INK_COLOR and INK_OPACITY sync-back, set up differently
+    // depending on whether alpha is supported.
+    let updateInkColor, updateInkOpacity;
+
+    if (FeatureTest.isAlphaColorInputSupported) {
+      // Enable alpha on the color input and remove the now-redundant opacity
+      // slider from the DOM.
+      editorInkColor.setAttribute("alpha", "");
+      editorInkOpacity.closest(".editorParamsSetter").remove();
+
+      // Track last-known color/opacity so that sync-back events for either
+      // property can reconstruct the full #RRGGBBAA without re-parsing the
+      // input's current (format-varying) value.
+      let currentInkColor = "#000000";
+      let currentInkOpacity = 1;
+
+      editorInkColor.addEventListener("input", function () {
+        // The returned value format varies by browser; normalize it.
+        const rgba = getRGBA(this.value);
+        if (!rgba) {
+          return;
+        }
+        const [r, g, b, opacity] = rgba;
+        const hex = Util.makeHexColor(r, g, b);
+        currentInkColor = hex;
+        currentInkOpacity = opacity;
+        dispatchEvent("INK_COLOR_AND_OPACITY", { color: hex, opacity });
+      });
+
+      updateInkColor = value => {
+        currentInkColor = value;
+        const alphaHex = Util.hexNums[Math.round(currentInkOpacity * 255)];
+        editorInkColor.value = currentInkColor + alphaHex;
+      };
+      updateInkOpacity = value => {
+        currentInkOpacity = value;
+        const alphaHex = Util.hexNums[Math.round(currentInkOpacity * 255)];
+        editorInkColor.value = currentInkColor + alphaHex;
+      };
+    } else {
+      editorInkColor.addEventListener("input", function () {
+        dispatchEvent("INK_COLOR", this.value);
+      });
+      editorInkOpacity.addEventListener("input", function () {
+        dispatchEvent("INK_OPACITY", this.valueAsNumber);
+      });
+
+      updateInkColor = value => {
+        editorInkColor.value = value;
+      };
+      updateInkOpacity = value => {
+        editorInkOpacity.value = value;
+      };
+    }
+
     editorInkThickness.addEventListener("input", function () {
       dispatchEvent("INK_THICKNESS", this.valueAsNumber);
     });
-    editorInkOpacity.addEventListener("input", function () {
-      dispatchEvent("INK_OPACITY", this.valueAsNumber);
-    });
     editorStampAddImage.addEventListener("click", () => {
+      eventBus.dispatch("reporttelemetry", {
+        source: this,
+        details: {
+          type: "editing",
+          data: { action: "pdfjs.image.add_image_click" },
+        },
+      });
+      dispatchEvent("CREATE");
+    });
+    editorFreeHighlightThickness.addEventListener("input", function () {
+      dispatchEvent("HIGHLIGHT_THICKNESS", this.valueAsNumber);
+    });
+    editorHighlightShowAll.addEventListener("click", function () {
+      const checked = this.getAttribute("aria-pressed") === "true";
+      this.setAttribute("aria-pressed", !checked);
+      dispatchEvent("HIGHLIGHT_SHOW_ALL", !checked);
+    });
+    editorSignatureAddSignature.addEventListener("click", () => {
       dispatchEvent("CREATE");
     });
 
-    this.eventBus._on("annotationeditorparamschanged", evt => {
-      for (const [type, value] of evt.details) {
-        switch (type) {
-          case AnnotationEditorParamsType.FREETEXT_SIZE:
-            editorFreeTextFontSize.value = value;
-            break;
-          case AnnotationEditorParamsType.FREETEXT_COLOR:
-            editorFreeTextColor.value = value;
-            break;
-          case AnnotationEditorParamsType.INK_COLOR:
-            editorInkColor.value = value;
-            break;
-          case AnnotationEditorParamsType.INK_THICKNESS:
-            editorInkThickness.value = value;
-            break;
-          case AnnotationEditorParamsType.INK_OPACITY:
-            editorInkOpacity.value = value;
-            break;
+    eventBus.on(
+      "annotationeditorparamschanged",
+      evt => {
+        for (const [type, value] of evt.details) {
+          switch (type) {
+            case AnnotationEditorParamsType.FREETEXT_SIZE:
+              editorFreeTextFontSize.value = value;
+              break;
+            case AnnotationEditorParamsType.FREETEXT_COLOR:
+              editorFreeTextColor.value = value;
+              break;
+            case AnnotationEditorParamsType.INK_COLOR:
+              updateInkColor(value);
+              break;
+            case AnnotationEditorParamsType.INK_THICKNESS:
+              editorInkThickness.value = value;
+              break;
+            case AnnotationEditorParamsType.INK_OPACITY:
+              updateInkOpacity(value);
+              break;
+            case AnnotationEditorParamsType.HIGHLIGHT_COLOR:
+              eventBus.dispatch("mainhighlightcolorpickerupdatecolor", {
+                source: this,
+                value,
+              });
+              break;
+            case AnnotationEditorParamsType.HIGHLIGHT_THICKNESS:
+              editorFreeHighlightThickness.value = value;
+              break;
+            case AnnotationEditorParamsType.HIGHLIGHT_FREE:
+              editorFreeHighlightThickness.disabled = !value;
+              break;
+            case AnnotationEditorParamsType.HIGHLIGHT_SHOW_ALL:
+              editorHighlightShowAll.setAttribute("aria-pressed", value);
+              break;
+          }
         }
-      }
-    });
+      },
+      internalOpt
+    );
   }
 }
 

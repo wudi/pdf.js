@@ -17,18 +17,11 @@ const DEFAULT_SCALE_VALUE = "auto";
 const DEFAULT_SCALE = 1.0;
 const DEFAULT_SCALE_DELTA = 1.1;
 const MIN_SCALE = 0.1;
-const MAX_SCALE = 10.0;
+const MAX_SCALE = 25.0;
 const UNKNOWN_SCALE = 0;
 const MAX_AUTO_SCALE = 1.25;
 const SCROLLBAR_PADDING = 40;
 const VERTICAL_PADDING = 5;
-
-const RenderingStates = {
-  INITIAL: 0,
-  RUNNING: 1,
-  PAUSED: 2,
-  FINISHED: 3,
-};
 
 const PresentationModeState = {
   UNKNOWN: 0,
@@ -77,43 +70,14 @@ const CursorTool = {
 const AutoPrintRegExp = /\bprint\s*\(/;
 
 /**
- * Scale factors for the canvas, necessary with HiDPI displays.
- */
-class OutputScale {
-  constructor() {
-    const pixelRatio = window.devicePixelRatio || 1;
-
-    /**
-     * @type {number} Horizontal scale.
-     */
-    this.sx = pixelRatio;
-
-    /**
-     * @type {number} Vertical scale.
-     */
-    this.sy = pixelRatio;
-  }
-
-  /**
-   * @type {boolean} Returns `true` when scaling is required, `false` otherwise.
-   */
-  get scaled() {
-    return this.sx !== 1 || this.sy !== 1;
-  }
-}
-
-/**
  * Scrolls specified element into view of its parent.
  * @param {HTMLElement} element - The element to be visible.
- * @param {Object} [spot] - An object with optional top and left properties,
+ * @param {object} [spot] - An object with optional top and left properties,
  *   specifying the offset from the top left edge.
  * @param {number} [spot.left]
  * @param {number} [spot.top]
- * @param {boolean} [scrollMatches] - When scrolling search results into view,
- *   ignore elements that either: Contains marked content identifiers,
- *   or have the CSS-rule `overflow: hidden;` set. The default value is `false`.
  */
-function scrollIntoView(element, spot, scrollMatches = false) {
+function scrollIntoView(element, spot) {
   // Assuming offsetParent is available (it's not available when viewer is in
   // hidden iframe or object). We have to scroll: if the offsetParent is not set
   // producing the error. See also animationStarted.
@@ -125,11 +89,8 @@ function scrollIntoView(element, spot, scrollMatches = false) {
   let offsetY = element.offsetTop + element.clientTop;
   let offsetX = element.offsetLeft + element.clientLeft;
   while (
-    (parent.clientHeight === parent.scrollHeight &&
-      parent.clientWidth === parent.scrollWidth) ||
-    (scrollMatches &&
-      (parent.classList.contains("markedContent") ||
-        getComputedStyle(parent).overflow === "hidden"))
+    parent.clientHeight === parent.scrollHeight &&
+    parent.clientWidth === parent.scrollWidth
   ) {
     offsetY += parent.offsetTop;
     offsetX += parent.offsetLeft;
@@ -155,41 +116,46 @@ function scrollIntoView(element, spot, scrollMatches = false) {
  * Helper function to start monitoring the scroll event and converting them into
  * PDF.js friendly one: with scroll debounce and scroll direction.
  */
-function watchScroll(viewAreaElement, callback) {
-  const debounceScroll = function (evt) {
-    if (rAF) {
-      return;
-    }
-    // schedule an invocation of scroll for next animation frame.
-    rAF = window.requestAnimationFrame(function viewAreaElementScrolled() {
-      rAF = null;
+function watchScroll(viewAreaElement, callback, abortSignal = undefined) {
+  function onRAF() {
+    rAF = null;
 
-      const currentX = viewAreaElement.scrollLeft;
-      const lastX = state.lastX;
-      if (currentX !== lastX) {
-        state.right = currentX > lastX;
-      }
-      state.lastX = currentX;
-      const currentY = viewAreaElement.scrollTop;
-      const lastY = state.lastY;
-      if (currentY !== lastY) {
-        state.down = currentY > lastY;
-      }
-      state.lastY = currentY;
-      callback(state);
-    });
-  };
+    const currentX = viewAreaElement.scrollLeft;
+    const lastX = state.lastX;
+    if (currentX !== lastX) {
+      state.right = currentX > lastX;
+    }
+    state.lastX = currentX;
+    const currentY = viewAreaElement.scrollTop;
+    const lastY = state.lastY;
+    if (currentY !== lastY) {
+      state.down = currentY > lastY;
+    }
+    state.lastY = currentY;
+    callback(state);
+  }
 
   const state = {
     right: true,
     down: true,
     lastX: viewAreaElement.scrollLeft,
     lastY: viewAreaElement.scrollTop,
-    _eventHandler: debounceScroll,
   };
 
   let rAF = null;
-  viewAreaElement.addEventListener("scroll", debounceScroll, true);
+  viewAreaElement.addEventListener(
+    "scroll",
+    () => {
+      // Schedule an invocation of scroll for next animation frame, when needed.
+      rAF ??= window.requestAnimationFrame(onRAF);
+    },
+    { useCapture: true, signal: abortSignal }
+  );
+  abortSignal?.addEventListener(
+    "abort",
+    () => window.cancelAnimationFrame(rAF),
+    { once: true }
+  );
   return state;
 }
 
@@ -206,22 +172,20 @@ function parseQueryString(query) {
   return params;
 }
 
-const InvisibleCharactersRegExp = /[\x00-\x1F]/g;
+// eslint-disable-next-line no-control-regex
+const InvisibleCharsRegExp = /[\x00-\x1F]/g;
 
 /**
  * @param {string} str
  * @param {boolean} [replaceInvisible]
  */
 function removeNullCharacters(str, replaceInvisible = false) {
-  if (!InvisibleCharactersRegExp.test(str)) {
+  if (!InvisibleCharsRegExp.test(str)) {
     return str;
   }
-  if (replaceInvisible) {
-    return str.replaceAll(InvisibleCharactersRegExp, m => {
-      return m === "\x00" ? "" : " ";
-    });
-  }
-  return str.replaceAll("\x00", "");
+  return replaceInvisible
+    ? str.replaceAll(InvisibleCharsRegExp, m => (m === "\x00" ? "" : " "))
+    : str.replaceAll("\x00", "");
 }
 
 /**
@@ -229,7 +193,6 @@ function removeNullCharacters(str, replaceInvisible = false) {
  * passes a given condition. The items are expected to be sorted in the sense
  * that if the condition is true for one item in the array, then it is also true
  * for all following items.
- *
  * @returns {number} Index of the first array element to pass the test,
  *                   or |items.length| if no such element exists.
  */
@@ -256,12 +219,16 @@ function binarySearchFirstItem(items, condition, start = 0) {
   return minIndex; /* === maxIndex */
 }
 
+// Used to add a fast-path for non-integer numbers in `approximateFraction`.
+const ApproximateFractionCache = new Map();
+
 /**
  *  Approximates float number as a fraction using Farey sequence (max order
  *  of 8).
  *  @param {number} x - Positive float number.
  *  @returns {Array} Estimated fraction: the first array item is a numerator,
  *                   the second one is a denominator.
+ *                   They are both natural numbers.
  */
 function approximateFraction(x) {
   // Fast paths for int numbers or their inversions.
@@ -276,6 +243,10 @@ function approximateFraction(x) {
     return [1, xinv];
   }
 
+  const cached = ApproximateFractionCache.get(x);
+  if (cached) {
+    return cached.slice();
+  }
   const x_ = x > 1 ? xinv : x;
   // a/b and c/d are neighbours in Farey sequence.
   let a = 0,
@@ -298,30 +269,34 @@ function approximateFraction(x) {
       b = q;
     }
   }
-  let result;
   // Select closest of the neighbours to x.
+  let res;
   if (x_ - a / b < c / d - x_) {
-    result = x_ === x ? [a, b] : [b, a];
+    res = x_ === x ? [a, b] : [b, a];
   } else {
-    result = x_ === x ? [c, d] : [d, c];
+    res = x_ === x ? [c, d] : [d, c];
   }
-  return result;
-}
-
-function roundToDivide(x, div) {
-  const r = x % div;
-  return r === 0 ? x : Math.round(x - r + div);
+  ApproximateFractionCache.set(x, res);
+  return res;
 }
 
 /**
- * @typedef {Object} GetPageSizeInchesParameters
+ * @param {number} x - A positive number to round to a multiple of `div`.
+ * @param {number} div - A natural number.
+ */
+function floorToDivide(x, div) {
+  return x - (x % div);
+}
+
+/**
+ * @typedef {object} GetPageSizeInchesParameters
  * @property {number[]} view
  * @property {number} userUnit
  * @property {number} rotate
  */
 
 /**
- * @typedef {Object} PageSize
+ * @typedef {object} PageSize
  * @property {number} width - In inches.
  * @property {number} height - In inches.
  */
@@ -347,7 +322,6 @@ function getPageSizeInches({ view, userUnit, rotate }) {
 
 /**
  * Helper function for getVisibleElements.
- *
  * @param {number} index - initial guess at the first visible element
  * @param {Array} views - array of pages, into which `index` is an index
  * @param {number} top - the top of the scroll pane
@@ -430,8 +404,13 @@ function backtrackBeforeAllVisibleElements(index, views, top) {
   return index;
 }
 
+function visibleSort(a, b) {
+  const pc = a.percent - b.percent;
+  return Math.abs(pc) > 0.001 ? -pc : a.id - b.id; // ensure stability
+}
+
 /**
- * @typedef {Object} GetVisibleElementsParameters
+ * @typedef {object} GetVisibleElementsParameters
  * @property {HTMLElement} scrollEl - A container that can possibly scroll.
  * @property {Array} views - Objects with a `div` property that contains an
  *   HTMLElement, which should all be descendants of `scrollEl` satisfying the
@@ -461,9 +440,8 @@ function backtrackBeforeAllVisibleElements(index, views, top) {
  * question. For pages, that ends up being equivalent to the bounding box of the
  * rendering canvas. Earlier and later refer to index in `views`, not page
  * layout.)
- *
  * @param {GetVisibleElementsParameters} params
- * @returns {Object} `{ first, last, views: [{ id, x, y, view, percent }] }`
+ * @returns {object} `{ first, last, views: [{ id, x, y, view, percent }] }`
  */
 function getVisibleElements({
   scrollEl,
@@ -570,10 +548,11 @@ function getVisibleElements({
       continue;
     }
 
-    const hiddenHeight =
-      Math.max(0, top - currentHeight) + Math.max(0, viewBottom - bottom);
-    const hiddenWidth =
-      Math.max(0, left - currentWidth) + Math.max(0, viewRight - right);
+    const minY = Math.max(0, top - currentHeight);
+    const minX = Math.max(0, left - currentWidth);
+
+    const hiddenHeight = minY + Math.max(0, viewBottom - bottom);
+    const hiddenWidth = minX + Math.max(0, viewRight - right);
 
     const fractionHeight = (viewHeight - hiddenHeight) / viewHeight,
       fractionWidth = (viewWidth - hiddenWidth) / viewWidth;
@@ -583,6 +562,18 @@ function getVisibleElements({
       id: view.id,
       x: currentWidth,
       y: currentHeight,
+      visibleArea:
+        // We only specify which part of the page is visible when it's not
+        // the full page, as there is no point in handling a partial page
+        // rendering otherwise.
+        percent === 100
+          ? null
+          : {
+              minX,
+              minY,
+              maxX: Math.min(viewRight, right) - currentWidth,
+              maxY: Math.min(viewBottom, bottom) - currentHeight,
+            },
       view,
       percent,
       widthPercent: (fractionWidth * 100) | 0,
@@ -594,13 +585,7 @@ function getVisibleElements({
     last = visible.at(-1);
 
   if (sortByVisibility) {
-    visible.sort(function (a, b) {
-      const pc = a.percent - b.percent;
-      if (Math.abs(pc) > 0.001) {
-        return -pc;
-      }
-      return a.id - b.id; // ensure stability
-    });
+    visible.sort(visibleSort);
   }
   return { first, last, views: visible, ids };
 }
@@ -679,10 +664,6 @@ const docStyle =
     ? null
     : document.documentElement.style;
 
-function clamp(v, min, max) {
-  return Math.min(Math.max(v, min), max);
-}
-
 class ProgressBar {
   #classList = null;
 
@@ -704,7 +685,7 @@ class ProgressBar {
   }
 
   set percent(val) {
-    this.#percent = clamp(val, 0, 100);
+    this.#percent = val;
 
     if (isNaN(val)) {
       this.#classList.add("indeterminate");
@@ -730,7 +711,7 @@ class ProgressBar {
   }
 
   setDisableAutoFetch(delay = /* ms = */ 5000) {
-    if (isNaN(this.#percent)) {
+    if (this.#percent === 100 || isNaN(this.#percent)) {
       return;
     }
     if (this.#disableAutoFetchTimeout) {
@@ -766,7 +747,6 @@ class ProgressBar {
  *
  * Recursively search for the truly active or focused element in case there are
  * shadow DOMs.
- *
  * @returns {Element} the truly active or focused element.
  */
 function getActiveOrFocusedElement() {
@@ -786,7 +766,7 @@ function getActiveOrFocusedElement() {
 /**
  * Converts API PageLayout values to the format used by `BaseViewer`.
  * @param {string} layout - The API PageLayout value.
- * @returns {Object}
+ * @returns {object}
  */
 function apiPageLayoutToViewerModes(layout) {
   let scrollMode = ScrollMode.VERTICAL,
@@ -845,12 +825,38 @@ function toggleCheckedBtn(button, toggle, view = null) {
   view?.classList.toggle("hidden", !toggle);
 }
 
+function toggleSelectedBtn(button, toggle, view = null) {
+  button.classList.toggle("selected", toggle);
+  button.setAttribute("aria-selected", toggle);
+
+  view?.classList.toggle("hidden", !toggle);
+}
+
 function toggleExpandedBtn(button, toggle, view = null) {
   button.classList.toggle("toggled", toggle);
   button.setAttribute("aria-expanded", toggle);
 
   view?.classList.toggle("hidden", !toggle);
 }
+
+// In Firefox, the css calc function uses f32 precision but the Chrome or Safari
+// are using f64 one. So in order to have the same rendering in all browsers, we
+// need to use the right precision in order to have correct dimensions.
+const calcRound =
+  typeof PDFJSDev !== "undefined" && PDFJSDev.test("MOZCENTRAL")
+    ? Math.fround
+    : (function () {
+        if (
+          typeof PDFJSDev !== "undefined" &&
+          PDFJSDev.test("LIB") &&
+          typeof document === "undefined"
+        ) {
+          return x => x;
+        }
+        const e = document.createElement("div");
+        e.style.width = "round(down, calc(1.6666666666666665 * 792px), 1px)";
+        return e.style.width === "calc(1320px)" ? Math.fround : x => x;
+      })();
 
 export {
   animationStarted,
@@ -860,11 +866,13 @@ export {
   AutoPrintRegExp,
   backtrackBeforeAllVisibleElements, // only exported for testing
   binarySearchFirstItem,
+  calcRound,
   CursorTool,
   DEFAULT_SCALE,
   DEFAULT_SCALE_DELTA,
   DEFAULT_SCALE_VALUE,
   docStyle,
+  floorToDivide,
   getActiveOrFocusedElement,
   getPageSizeInches,
   getVisibleElements,
@@ -877,13 +885,10 @@ export {
   MIN_SCALE,
   normalizeWheelEventDelta,
   normalizeWheelEventDirection,
-  OutputScale,
   parseQueryString,
   PresentationModeState,
   ProgressBar,
   removeNullCharacters,
-  RenderingStates,
-  roundToDivide,
   SCROLLBAR_PADDING,
   scrollIntoView,
   ScrollMode,
@@ -892,6 +897,7 @@ export {
   TextLayerMode,
   toggleCheckedBtn,
   toggleExpandedBtn,
+  toggleSelectedBtn,
   UNKNOWN_SCALE,
   VERTICAL_PADDING,
   watchScroll,

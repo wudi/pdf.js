@@ -28,6 +28,8 @@
 }
 
 .xfaLayer {
+  color-scheme: only light;
+
   background-color: transparent;
 }
 
@@ -109,6 +111,14 @@
 
 .xfaLayer a {
   color: blue;
+}
+
+.xfaLayer b {
+  font-weight: bold;
+}
+
+.xfaLayer i {
+  font-style: italic;
 }
 
 .xfaRich li {
